@@ -120,6 +120,65 @@ where
     }
 }
 
+pub struct RoRangeRev<'txn, KC, DC> {
+    cursor: RoCursor<'txn>,
+    start_bound: Bound<Vec<u8>>,
+    end_bound: Option<Bound<Vec<u8>>>,
+    _phantom: marker::PhantomData<(KC, DC)>,
+}
+
+impl<'txn, KC, DC> Iterator for RoRangeRev<'txn, KC, DC>
+where
+    KC: BytesDecode<'txn>,
+    DC: BytesDecode<'txn>,
+{
+    type Item = Result<(KC::DItem, DC::DItem)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let result = match self.end_bound.take() {
+            Some(Bound::Included(end)) => {
+                self.cursor.move_on_key_greater_than_or_equal_to(&end)
+                    .and_then(|o| match o {
+                        Some((k, _)) if k > &end => self.cursor.move_on_prev(),
+                        Some(entry) => Ok(Some(entry)),
+                        None => Ok(None),
+                    })
+            }
+            Some(Bound::Excluded(end)) => {
+                //advance_key(&mut start);
+                self.cursor.move_on_key_greater_than_or_equal_to(&end)
+                    .and_then(|o| match o {
+                        Some(_) => self.cursor.move_on_prev(),
+                        None => Ok(None),
+                    })
+            }
+            Some(Bound::Unbounded) => self.cursor.move_on_last(),
+            None => self.cursor.move_on_prev(),
+        };
+
+        match result {
+            Ok(Some((key, data))) => {
+                let must_be_returned = match self.start_bound {
+                    Bound::Included(ref start) => key >= start,
+                    Bound::Excluded(ref start) => key > start,
+                    Bound::Unbounded => true,
+                };
+
+                if must_be_returned {
+                    match (KC::bytes_decode(key), DC::bytes_decode(data)) {
+                        (Some(key), Some(data)) => Some(Ok((key, data))),
+                        (_, _) => Some(Err(Error::Decoding)),
+                    }
+                } else {
+                    None
+                }
+            }
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
 pub struct RoRange<'txn, KC, DC> {
     cursor: RoCursor<'txn>,
     start_bound: Option<Bound<Vec<u8>>>,
@@ -166,6 +225,17 @@ where
             }
             Ok(None) => None,
             Err(e) => Some(Err(e)),
+        }
+    }
+}
+
+impl<'txn, KC, DC> RoRange<'txn, KC, DC> {
+    pub fn rev(self) -> RoRangeRev<'txn, KC, DC> {
+        RoRangeRev {
+            cursor: self.cursor,
+            start_bound: self.start_bound.expect("RoRange consumed"),
+            end_bound: Some(self.end_bound),
+            _phantom: self._phantom,
         }
     }
 }
