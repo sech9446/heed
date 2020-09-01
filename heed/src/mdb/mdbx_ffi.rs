@@ -45,6 +45,7 @@ pub mod cursor_op {
     pub const MDB_LAST: MDBX_cursor_op = MDBX_cursor_op::MDBX_LAST;
     pub const MDB_SET_RANGE: MDBX_cursor_op = MDBX_cursor_op::MDBX_SET_RANGE;
     pub const MDB_NEXT: MDBX_cursor_op = MDBX_cursor_op::MDBX_NEXT;
+    pub const MDB_PREV: MDBX_cursor_op = MDBX_cursor_op::MDBX_PREV;
 }
 
 pub unsafe fn into_val(value: &[u8]) -> ffi::MDBX_val {
